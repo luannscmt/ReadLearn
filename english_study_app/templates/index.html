@@ -1,0 +1,464 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="app-container">
+    <!-- Barra Superior / Header -->
+    <header class="app-header">
+        <div class="header-brand">
+            <span class="brand-icon">🎧</span>
+            <div>
+                <h1>English Study Station</h1>
+                <span class="brand-subtitle">Listening & Reading Simultâneo</span>
+            </div>
+        </div>
+
+        <div class="header-actions">
+            <button id="btnDashboard" class="btn btn-outline" title="Ver dashboard de evolução e estatísticas de estudo">
+                <span class="icon">📊</span> Estatísticas
+            </button>
+            <button id="btnRefresh" class="btn btn-outline" title="Reescanear pastas do disco">
+                <span class="icon">🔄</span> Atualizar Pastas
+            </button>
+            <button id="btnThemeToggle" class="btn btn-icon" title="Alternar tema Claro/Escuro">
+                <span id="themeIcon">🌙</span>
+            </button>
+            <button id="btnShortcuts" class="btn btn-icon" title="Atalhos do Teclado">
+                ⌨️
+            </button>
+        </div>
+    </header>
+
+    <!-- Área Principal Dividida (Split Screen) -->
+    <main class="main-layout">
+        <!-- Coluna da Esquerda: Navegação e Reprodutor de Áudio -->
+        <aside class="sidebar-panel">
+            <!-- Caixa de Pesquisa -->
+            <div class="search-box">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="lessonSearch" placeholder="Buscar lição, áudio ou narrador..." autocomplete="off">
+                <button id="clearSearch" class="btn-clear hidden">&times;</button>
+            </div>
+
+            <!-- Lista de Lições/Pastas -->
+            <div class="lessons-container" id="lessonsContainer">
+                {% if not lessons %}
+                <div class="empty-state">
+                    <p>Nenhuma pasta com áudios/PDFs encontrada.</p>
+                    <small>Adicione pastas no diretório de áudios e clique em Atualizar.</small>
+                </div>
+                {% endif %}
+
+                {% for lesson in lessons %}
+                <div class="lesson-card{% if lesson.completed %} lesson-completed{% endif %}"
+                     data-lesson-id="{{ lesson.id }}"
+                     data-lesson-name="{{ lesson.name }}"
+                     data-lesson-path="{{ lesson.rel_path }}"
+                     data-completed="{{ 1 if lesson.completed else 0 }}">
+                    <div class="lesson-header" title="Clique para abrir esta pasta em tela cheia (as outras se recolhem)">
+                        <div class="lesson-info">
+                            <label class="lesson-complete-toggle" title="{% if lesson.completed %}Desmarcar — ainda tenho áudios desta pasta para estudar{% else %}Marcar como concluída — já estudei esta pasta{% endif %}">
+                                <input type="checkbox" class="input-complete" data-path="{{ lesson.rel_path }}" {% if lesson.completed %}checked{% endif %}>
+                            </label>
+                            <span class="chevron-icon">▶</span>
+                            <span class="folder-icon">📁</span>
+                            <span class="lesson-name" title="{{ lesson.name }}">{{ lesson.name }}</span>
+                        </div>
+                        <div class="lesson-badges">
+                            {% if lesson.completed %}<span class="badge badge-done" title="Pasta concluída">✅</span>{% endif %}
+                            <span class="badge badge-audios" title="{{ lesson.total_audios }} áudios">{{ lesson.total_audios }} 🎵</span>
+                            {% if lesson.total_pdfs %}
+                            <span class="badge badge-pdfs" title="{{ lesson.total_pdfs }} PDFs">{{ lesson.total_pdfs }} 📄</span>
+                            {% endif %}
+                            <span class="badge badge-listens listens-badge-{{ lesson.id }}" title="Total de escutas nesta lição">{{ lesson.total_listens }} 🎧</span>
+                        </div>
+                    </div>
+
+                    <!-- Conteúdo Interno da Pasta (Áudios Primeiro, depois PDFs) -->
+                    <div class="lesson-content" style="display: none;">
+                        <!-- 1. Áudios da Lição no Topo -->
+                        <div class="section-divider">
+                            <span class="section-title">🎵 Áudios / Narradores ({{ lesson.audios|length }})</span>
+                        </div>
+                        <div class="lesson-audios">
+                            {% for audio in lesson.audios %}
+                            <div class="audio-item"
+                                 data-audio-path="{{ audio.rel_path }}"
+                                 data-audio-title="{{ audio.title }}"
+                                 data-lesson-name="{{ lesson.name }}"
+                                 data-default-pdf="{{ audio.default_pdf or '' }}"
+                                 data-manual-pdf="{{ audio.pdf_link_manual or '' }}"
+                                 data-sync-file="{{ audio.sync_file or '' }}"
+                                 data-play-count="{{ audio.play_count }}"
+                                 data-last-played="{{ audio.last_played or '' }}">
+                                <div class="audio-item-left">
+                                    <button class="btn-play-item" title="Tocar este áudio">▶</button>
+                                    <div class="audio-meta">
+                                        <span class="audio-name" title="{{ audio.name }}">{{ audio.title }}</span>
+                                        <span class="audio-sub">
+                                            <span class="sub-size">{{ audio.size }}</span>
+                                            {% if audio.duration_label %}
+                                            <span class="audio-dur-link {% if audio.duration_source == 'manual' %}dur-manual{% endif %}"
+                                                  data-path="{{ audio.rel_path }}"
+                                                  data-dur="{{ audio.duration_seconds }}"
+                                                  data-dur-auto="{{ audio.duration_auto or '' }}"
+                                                  data-dur-source="{{ audio.duration_source or '' }}"
+                                                  role="button" tabindex="0"
+                                                  title="{% if audio.duration_source == 'manual' %}Duração informada por você — clique para ajustar{% else %}Duração detectada automaticamente — clique para ajustar{% endif %}">⏱️ {{ audio.duration_label }}{% if audio.duration_source == 'manual' %} ✎{% endif %}</span>
+                                            {% else %}
+                                            <span class="audio-dur-link dur-missing"
+                                                  data-path="{{ audio.rel_path }}"
+                                                  data-dur=""
+                                                  data-dur-auto="{{ audio.duration_auto or '' }}"
+                                                  data-dur-source=""
+                                                  role="button" tabindex="0"
+                                                  title="Duração não detectada — clique para informar o tempo">⏱️ informar duração</span>
+                                            {% endif %}
+                                            <span class="audio-last-date" title="Última vez que este áudio foi escutado"{% if not audio.last_played %} style="display: none;"{% endif %}>{% if audio.last_played %}🗓️ {{ audio.last_played|datetime_br }}{% endif %}</span>
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="audio-item-right">
+                                    <span class="badge-count" id="count-badge-{{ loop.index0 }}-{{ lesson.id }}" title="Vezes que este áudio foi escutado">
+                                        {{ audio.play_count }}x
+                                    </span>
+                                    <button class="btn-history" title="Ver as datas em que escutei este áudio">🗓️</button>
+                                    <button class="btn-link" data-path="{{ audio.rel_path }}" title="Vincular o PDF correto a este áudio">🔗</button>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+
+                        <!-- 2. Textos / PDFs da Lição -->
+                        {% if lesson.pdfs %}
+                        <div class="section-divider">
+                            <span class="section-title">📄 Textos / PDFs ({{ lesson.pdfs|length }})</span>
+                        </div>
+                        <div class="lesson-pdfs">
+                            {% for pdf in lesson.pdfs %}
+                            <div class="pdf-item"
+                                 data-pdf-path="{{ pdf.rel_path }}"
+                                 data-pdf-name="{{ pdf.name }}"
+                                 data-lesson-name="{{ lesson.name }}"
+                                 title="Clique para abrir este PDF e o áudio correspondente">
+                                <div class="pdf-item-left">
+                                    <span class="pdf-item-icon">📄</span>
+                                    <div class="pdf-item-meta">
+                                        <span class="pdf-item-name" title="{{ pdf.name }}">{{ pdf.name }}</span>
+                                        <span class="pdf-item-size">{{ pdf.size }}</span>
+                                    </div>
+                                </div>
+                                <div class="pdf-item-right">
+                                    <button class="btn-view-pdf" title="Ler este PDF">Visualizar 📖</button>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <!-- Reprodutor de Áudio Fixo -->
+            <div class="player-panel" id="playerPanel">
+                <div class="now-playing-header">
+                    <div class="now-playing-info">
+                        <span class="now-playing-tag">TOCANDO AGORA</span>
+                        <h3 id="currentTitle">Selecione um áudio acima</h3>
+                        <p id="currentSubtitle">Nenhum arquivo em reprodução</p>
+                    </div>
+
+                    <!-- Badge e Controles do Contador -->
+                    <div class="counter-box" id="counterBox">
+                        <div class="counter-label">ESCUTAS</div>
+                        <div class="counter-display">
+                            <button id="btnDecCount" class="btn-count-adjust" title="Diminuir 1 escuta">-</button>
+                            <span id="currentCountDisplay" class="count-number">0</span>
+                            <button id="btnIncCount" class="btn-count-adjust" title="Adicionar 1 escuta">+1</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Elemento de áudio HTML5 -->
+                <audio id="audioElement" preload="metadata"></audio>
+
+                <!-- Barra de Progresso Customizada com Marcadores de Trecho A-B -->
+                <div class="progress-section">
+                    <div class="progress-bar-container" id="progressBarContainer">
+                        <div class="progress-bar-fill" id="progressBarFill"></div>
+                        <div class="loop-region-highlight" id="loopRegionHighlight" style="display: none;"></div>
+                        <div class="loop-marker loop-marker-a" id="loopMarkerA" style="display: none;" title="Ponto de Início (A)">A</div>
+                        <div class="loop-marker loop-marker-b" id="loopMarkerB" style="display: none;" title="Ponto de Fim (B)">B</div>
+                    </div>
+                    <div class="time-display">
+                        <span id="currentTime">00:00</span>
+                        <span id="totalDuration">00:00</span>
+                    </div>
+                </div>
+
+                <!-- Controles do Player -->
+                <div class="player-controls">
+                    <button id="btnSkipBack" class="btn-ctrl" title="Voltar 5 segundos (Seta Esquerda)">
+                        ↺ 5s
+                    </button>
+                    <button id="btnPlayPause" class="btn-ctrl btn-main-play" title="Reproduzir / Pausar (Espaço)" disabled>
+                        <span id="playPauseIcon">▶</span>
+                    </button>
+                    <button id="btnSkipForward" class="btn-ctrl" title="Avançar 10 segundos (Seta Direita)">
+                        10s ↻
+                    </button>
+                    <button id="btnLoop" class="btn-ctrl" title="Repetir este áudio inteiro continuamente (R)">
+                        🔁
+                    </button>
+                    <button id="btnSequence" class="btn-ctrl" title="Tocar os áudios desta pasta em sequência (para no último)">
+                        ▶▶
+                    </button>
+                    <button id="btnToggleAB" class="btn-ctrl btn-ab" title="Repetir trecho específico de frase (Loop A-B)">
+                        🔂 A-B
+                    </button>
+                </div>
+
+                <!-- Painel Expansível de Repetição de Trecho (Loop A-B) -->
+                <div class="ab-loop-panel" id="abLoopPanel" style="display: none;">
+                    <div class="ab-loop-header">
+                        <span class="ab-loop-title">🔂 Repetir Trecho da Frase</span>
+                        <span class="ab-loop-status" id="abLoopStatus">00:00 ➔ 00:10</span>
+                    </div>
+
+                    <div class="ab-loop-controls-row">
+                        <!-- Ponto A -->
+                        <div class="ab-point-control">
+                            <span class="point-badge">A</span>
+                            <span id="displayTimeA" class="point-time">00:00</span>
+                            <button id="btnSetA" class="btn btn-sm btn-outline" title="Definir tempo atual do áudio como Início">📍 Marcar</button>
+                            <button id="btnAminus" class="btn-step" title="Voltar 1 segundo">-1s</button>
+                            <button id="btnAplus" class="btn-step" title="Avançar 1 segundo">+1s</button>
+                        </div>
+
+                        <!-- Ponto B -->
+                        <div class="ab-point-control">
+                            <span class="point-badge">B</span>
+                            <span id="displayTimeB" class="point-time">00:10</span>
+                            <button id="btnSetB" class="btn btn-sm btn-outline" title="Definir tempo atual do áudio como Fim">📍 Marcar</button>
+                            <button id="btnBminus" class="btn-step" title="Voltar 1 segundo">-1s</button>
+                            <button id="btnBplus" class="btn-step" title="Avançar 1 segundo">+1s</button>
+                        </div>
+                    </div>
+
+                    <!-- Barrinhas Deslizantes para Início e Fim -->
+                    <div class="ab-sliders-container">
+                        <div class="ab-slider-row">
+                            <span class="slider-text">Início:</span>
+                            <input type="range" id="sliderLoopA" class="ab-range-slider" min="0" max="100" value="0" step="1">
+                        </div>
+                        <div class="ab-slider-row">
+                            <span class="slider-text">Fim:</span>
+                            <input type="range" id="sliderLoopB" class="ab-range-slider" min="0" max="100" value="10" step="1">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Barra de Opções Adicionais (Velocidade & Volume) -->
+                <div class="player-extra-controls">
+                    <div class="speed-controls" title="Velocidade de reprodução">
+                        <span class="ctrl-label">Velocidade:</span>
+                        <div class="speed-chips">
+                            <button class="chip-speed" data-speed="0.75">0.75x</button>
+                            <button class="chip-speed active" data-speed="1.0">1.0x</button>
+                            <button class="chip-speed" data-speed="1.25">1.25x</button>
+                            <button class="chip-speed" data-speed="1.5">1.5x</button>
+                        </div>
+                    </div>
+
+                    <div class="volume-control">
+                        <button id="btnMute" class="btn-icon-small" title="Silenciar">🔊</button>
+                        <input type="range" id="volumeSlider" min="0" max="1" step="0.05" value="1" title="Volume">
+                    </div>
+                </div>
+
+                <!-- Configurações Rápidas -->
+                <div class="player-footer-settings">
+                    <label class="checkbox-container" title="Incrementa a contagem automaticamente ao concluir a escuta">
+                        <input type="checkbox" id="autoCountToggle" checked>
+                        <span class="checkmark"></span>
+                        Contar automaticamente ao terminar
+                    </label>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Coluna da Direita: Visualizador de PDF e Texto Sincronizado -->
+        <section class="pdf-panel">
+            <div class="pdf-toolbar">
+                <div class="pdf-title-area">
+                    <span class="pdf-icon" id="viewerIcon">💬</span>
+                    <span id="pdfCurrentTitle" class="pdf-filename">Nenhum áudio ou texto selecionado</span>
+                    <div class="reader-tabs" id="readerTabs" style="display: none;">
+                        <button id="tabSyncText" class="reader-tab active" title="Texto sincronizado com áudio">💬 Sincronizado</button>
+                        <button id="tabPdf" class="reader-tab" title="PDF original">📄 PDF</button>
+                    </div>
+                </div>
+
+                <div class="pdf-actions">
+                    <!-- Controles específicos do Texto Sincronizado -->
+                    <label class="sync-tool-item" id="toggleTranslationLabel" style="display: none;" title="Mostrar tradução em português abaixo do inglês">
+                        <input type="checkbox" id="toggleTranslation" checked>
+                        <span>Tradução (PT)</span>
+                    </label>
+
+                    <button id="btnAutoScroll" class="btn-tool-toggle active" style="display: none;" title="Rolar a tela automaticamente com o áudio">
+                        🔄 Auto-scroll
+                    </button>
+
+                    <div class="font-size-controls" id="fontSizeControls" style="display: none;">
+                        <button id="btnFontDec" class="btn-tool-sm" title="Diminuir fonte">A-</button>
+                        <button id="btnFontInc" class="btn-tool-sm" title="Aumentar fonte">A+</button>
+                    </div>
+
+                    <!-- Seletor manual caso haja múltiplos PDFs na lição -->
+                    <div class="pdf-selector-wrapper" id="pdfSelectorWrapper" style="display: none;">
+                        <label for="pdfSelectDropdown">Mudar PDF:</label>
+                        <select id="pdfSelectDropdown" class="pdf-select"></select>
+                    </div>
+
+                    <a id="btnOpenPdfNewTab" href="#" target="_blank" class="btn btn-outline btn-sm" title="Abrir PDF numa nova aba" style="display: none;">
+                        ↗ Nova Aba
+                    </a>
+                </div>
+            </div>
+
+            <div class="pdf-viewer-container" id="pdfViewerContainer">
+                <div class="pdf-placeholder" id="pdfPlaceholder">
+                    <div class="placeholder-content">
+                        <span class="placeholder-icon">📖</span>
+                        <h2>Visualizador de Texto / PDF</h2>
+                        <p>Selecione um áudio na lista lateral para carregar automaticamente o áudio e o texto de estudos.</p>
+                        <div class="study-tips">
+                            <h4>💡 Dicas de Estudo:</h4>
+                            <ul>
+                                <li>O texto acompanha a fala do áudio automaticamente e destaca a frase atual.</li>
+                                <li>Clique em qualquer frase para o áudio pular direto para aquele ponto.</li>
+                                <li>Use a caixa <strong>Tradução (PT)</strong> no topo para exibir ou esconder o português.</li>
+                                <li>Use <kbd>Espaço</kbd> para pausar e <kbd>←</kbd> para voltar 5 segundos.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Leitor de Texto Sincronizado -->
+                <div id="syncViewerContainer" class="sync-viewer-container" style="display: none;"></div>
+
+                <!-- Visualizador de PDF clássico -->
+                <iframe id="pdfIframe" class="pdf-iframe" src="about:blank" style="display: none;"></iframe>
+            </div>
+        </section>
+    </main>
+
+    <!-- Modal de Atalhos de Teclado -->
+    <div id="shortcutsModal" class="modal-overlay hidden">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3>Atalhos do Teclado</h3>
+                <button id="btnCloseModal" class="btn-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="shortcut-row"><kbd>Espaço</kbd> <span>Play / Pause</span></div>
+                <div class="shortcut-row"><kbd>←</kbd> <span>Voltar 5 segundos</span></div>
+                <div class="shortcut-row"><kbd>→</kbd> <span>Avançar 10 segundos</span></div>
+                <div class="shortcut-row"><kbd>R</kbd> <span>Alternar Repetição Contínua (Loop Geral)</span></div>
+                <div class="shortcut-row"><kbd>S</kbd> <span>Tocar esta pasta em sequência</span></div>
+                <div class="shortcut-row"><kbd>L</kbd> <span>Repetir Trecho da Frase (Loop A-B)</span></div>
+                <div class="shortcut-row"><kbd>M</kbd> <span>Silenciar / Ativar Som</span></div>
+                <div class="shortcut-row"><kbd>+</kbd> <span>Incrementar +1 escuta manualmente</span></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal do Dashboard de Evolução -->
+    <div id="dashboardModal" class="modal-overlay hidden">
+        <div class="modal-card dashboard-card">
+            <div class="modal-header">
+                <div class="modal-title-wrap">
+                    <h3>📊 Dashboard de Evolução</h3>
+                    <p id="dashboardUpdatedAt" class="modal-sub">Carregando estatísticas...</p>
+                </div>
+                <button id="btnCloseDashboard" class="btn-close" title="Fechar dashboard">&times;</button>
+            </div>
+            <div id="dashboardContent" class="dashboard-content">
+                <!-- Conteúdo injetado via dashboard.js -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal do Histórico de Datas de um Áudio -->
+    <div id="historyModal" class="modal-overlay hidden">
+        <div class="modal-card history-card">
+            <div class="modal-header">
+                <div class="modal-title-wrap">
+                    <h3 id="historyModalTitle">🗓️ Datas de escuta</h3>
+                    <p id="historyModalSub" class="modal-sub">Carregando...</p>
+                </div>
+                <button id="btnCloseHistory" class="btn-close" title="Fechar histórico">&times;</button>
+            </div>
+            <div id="historyList" class="history-list">
+                <p class="dash-empty">Carregando histórico...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Duração Manual do Áudio -->
+    <div id="durationModal" class="modal-overlay hidden">
+        <div class="modal-card duration-card">
+            <div class="modal-header">
+                <div class="modal-title-wrap">
+                    <h3>⏱️ Duração do áudio</h3>
+                    <p id="durationModalSub" class="modal-sub">Informe o tempo deste áudio</p>
+                </div>
+                <button id="btnCloseDuration" class="btn-close" title="Fechar">&times;</button>
+            </div>
+            <div class="duration-body">
+                <div id="durationDetected" class="duration-detected"></div>
+                <label class="duration-label" for="durationInput">Tempo do áudio (segundos ou MM:SS):</label>
+                <div class="duration-form-row">
+                    <input id="durationInput" type="text" inputmode="numeric" placeholder="ex.: 40 ou 12:30" autocomplete="off">
+                    <button id="btnSaveDuration" class="btn btn-primary" type="button">Salvar</button>
+                </div>
+                <button id="btnClearDuration" class="btn btn-outline duration-clear hidden" type="button"></button>
+                <div id="durationError" class="duration-error"></div>
+                <p class="dash-note">💾 O tempo informado fica salvo no banco de dados e é usado para calcular seu tempo total de escuta.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Vínculo Áudio <-> PDF -->
+    <div id="linkModal" class="modal-overlay hidden">
+        <div class="modal-card link-card">
+            <div class="modal-header">
+                <div class="modal-title-wrap">
+                    <h3>🔗 Vincular Áudio ↔ PDF</h3>
+                    <p id="linkModalSub" class="modal-sub">Escolha o PDF correto</p>
+                </div>
+                <button id="btnCloseLink" class="btn-close" title="Fechar">&times;</button>
+            </div>
+            <div class="link-body">
+                <p class="link-help">Escolha qual PDF deve abrir quando este áudio for selecionado. O vínculo também funciona no caminho inverso: clicar nesse PDF abrirá este áudio.</p>
+                <div id="linkOptions" class="link-options">
+                    <p class="dash-empty">Carregando PDFs...</p>
+                </div>
+                <div id="linkError" class="duration-error"></div>
+                <div class="link-actions">
+                    <button id="btnSaveLink" class="btn btn-primary" type="button">Salvar vínculo</button>
+                </div>
+                <p class="dash-note">💾 O vínculo fica salvo no banco de dados até você trocar ou escolher "Automático".</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast de Notificação -->
+    <div id="toastNotification" class="toast hidden"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}
